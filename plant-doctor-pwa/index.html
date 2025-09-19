@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Plant Doctor v0.1 (PWA)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#2d7a46"/>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 16px; }
+    h1 { margin: 0 0 8px; }
+    section { display: none; }
+    .active { display: block; }
+    .row { margin: 10px 0; }
+    img.preview { width: 100%; max-width: 520px; display:block; margin-top:8px; border-radius:8px; }
+    button { padding: 12px 14px; border: 1px solid #ccc; border-radius: 10px; background:#fff; }
+    select, input[type="file"], textarea { width: 100%; padding:12px; border-radius:10px; border:1px solid #ccc; }
+    textarea { min-height: 140px; font-size: 14px; }
+    .muted { color:#666; font-size: 0.92em; }
+    .toolbar { display:flex; gap:10px; flex-wrap: wrap; }
+  </style>
+</head>
+<body>
+  <h1>🌱 Plant Doctor</h1>
+  <p class="muted">v0.1 — offline PWA</p>
+
+  <!-- Scan -->
+  <section id="scan" class="active">
+    <h2>1) Scan</h2>
+    <div class="row">
+      <label>Upload photo (wide or macro)
+        <input type="file" id="photo" accept="image/*" />
+      </label>
+      <img id="preview" class="preview" alt="preview will appear here"/>
+    </div>
+
+    <div class="row">
+      <label><input type="checkbox" id="knowPlant" /> I know the plant</label>
+      <select id="plantSelect">
+        <option value="">— choose your plant —</option>
+        <option value="geranium-citronella">Citronella Geranium</option>
+        <option value="peperomia-obtusifolia">Peperomia obtusifolia</option>
+        <option value="sansevieria-trifasciata">Sansevieria (Dracaena trifasciata)</option>
+        <option value="codiaeum-variegatum">Croton (Codiaeum variegatum)</option>
+        <option value="ficus-elastica">Ficus elastica</option>
+        <option value="persea-americana">Avocado (Persea americana)</option>
+        <option value="rosa-sp">Rose (Rosa sp.)</option>
+        <option value="spathiphyllum">Spathiphyllum (Peace Lily)</option>
+        <option value="philodendron-hederaceum">Philodendron hederaceum</option>
+        <option value="zamioculcas-zamiifolia">Zamioculcas zamiifolia (ZZ)</option>
+        <option value="calathea-lancifolia">Calathea lancifolia</option>
+        <option value="alocasia-sp">Alocasia sp.</option>
+        <option value="ficus-microcarpa">Ficus microcarpa (Ginseng)</option>
+        <option value="dracaena-sanderiana">Lucky Bamboo (Dracaena sanderiana)</option>
+        <option value="ficus-lyrata">Ficus lyrata</option>
+        <option value="epipremnum-aureum-variegata">Epipremnum aureum variegata</option>
+      </select>
+    </div>
+
+    <button onclick="goDescribe()">Next ➡️</button>
+  </section>
+
+  <!-- Describe -->
+  <section id="describe">
+    <h2>2) Describe (45s)</h2>
+
+    <h3>Symptoms</h3>
+    <label><input type="checkbox" value="chlorosis" /> Yellow between veins</label><br>
+    <label><input type="checkbox" value="brown_edges" /> Brown/crispy edges</label><br>
+    <label><input type="checkbox" value="powdery" /> White powder / sticky film</label><br>
+    <label><input type="checkbox" value="webbing" /> Webbing / tiny moving dots</label><br>
+    <label><input type="checkbox" value="holes" /> Spots / holes / chewing</label><br>
+
+    <h3>Conditions</h3>
+    <div class="row">Watering:
+      <select id="watering">
+        <option>Soil stays wet</option>
+        <option>Dries quickly</option>
+      </select>
+    </div>
+    <div class="row">Light:
+      <select id="light">
+        <option>Direct sun</option>
+        <option>Bright indirect</option>
+        <option>Shade</option>
+      </select>
+    </div>
+    <div class="row">Humidity:
+      <select id="humidity">
+        <option>Dry</option>
+        <option>Normal</option>
+        <option>Humid</option>
+      </select>
+    </div>
+    <div class="row">Recently repotted/fertilized?
+      <select id="repot">
+        <option>No</option>
+        <option>Yes</option>
+      </select>
+    </div>
+
+    <button onclick="goResult()">See result ✅</button>
+  </section>
+
+  <!-- Result -->
+  <section id="result">
+    <h2>3) Result</h2>
+    <div id="diagnosis"></div>
+
+    <h3>Ask GPT</h3>
+    <p class="muted">Copy this and paste into ChatGPT along with the same photo.</p>
+    <textarea id="gptPrompt" readonly></textarea>
+    <div class="toolbar">
+      <button onclick="copyPrompt()">Copy to GPT</button>
+      <a href="https://chat.openai.com" target="_blank" rel="noopener"><button>Open ChatGPT</button></a>
+    </div>
+
+    <div class="toolbar">
+      <button onclick="saveCase()">💾 Save case</button>
+      <button onclick="showHistory()">📜 History</button>
+      <button onclick="restart()">🔄 New scan</button>
+    </div>
+  </section>
+
+  <!-- History -->
+  <section id="history">
+    <h2>📜 History (last 5)</h2>
+    <ul id="historyList"></ul>
+    <button onclick="restart()">Back</button>
+  </section>
+
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(console.error);
+  });
+}
+
+let photoData = "";
+let selectedPlant = "";
+
+const plantNames = {
+  "geranium-citronella":"Citronella Geranium (Pelargonium graveolens)",
+  "peperomia-obtusifolia":"Peperomia obtusifolia",
+  "sansevieria-trifasciata":"Sansevieria / Dracaena trifasciata",
+  "codiaeum-variegatum":"Croton (Codiaeum variegatum)",
+  "ficus-elastica":"Ficus elastica",
+  "persea-americana":"Avocado (Persea americana)",
+  "rosa-sp":"Rose (Rosa sp.)",
+  "spathiphyllum":"Spathiphyllum (Peace Lily)",
+  "philodendron-hederaceum":"Philodendron hederaceum",
+  "zamioculcas-zamiifolia":"Zamioculcas zamiifolia (ZZ)",
+  "calathea-lancifolia":"Calathea lancifolia",
+  "alocasia-sp":"Alocasia sp.",
+  "ficus-microcarpa":"Ficus microcarpa (Ginseng)",
+  "dracaena-sanderiana":"Lucky Bamboo (Dracaena sanderiana)",
+  "ficus-lyrata":"Ficus lyrata",
+  "epipremnum-aureum-variegata":"Epipremnum aureum variegata"
+};
+
+document.getElementById("photo").addEventListener("change", e => {
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    photoData = reader.result;
+    document.getElementById("preview").src = photoData;
+  };
+  reader.readAsDataURL(file);
+});
+
+document.getElementById("plantSelect").addEventListener("change", e => {
+  selectedPlant = e.target.value;
+});
+
+function goDescribe(){
+  document.getElementById("scan").classList.remove("active");
+  document.getElementById("describe").classList.add("active");
+}
+
+function goResult(){
+  document.getElementById("describe").classList.remove("active");
+  document.getElementById("result").classList.add("active");
+
+  const symptomEls = Array.from(document.querySelectorAll("#describe input[type=checkbox]:checked"));
+  const symptoms = symptomEls.map(c => c.value);
+  const watering = document.getElementById("watering").value;
+  const light = document.getElementById("light").value;
+  const humidity = document.getElementById("humidity").value;
+  const repot = document.getElementById("repot").value;
+
+  let main = "General stress";
+  let plan = "Check light and watering; avoid sudden changes.";
+
+  if(symptoms.includes("brown_edges") && watering==="Soil stays wet"){
+    main = "Overwatering / early root issues";
+    plan = "Drain saucer, let top 2–3 cm dry, ensure drainage holes. Smell soil; if musty → repot to airy mix.";
+  } else if(symptoms.includes("brown_edges") && humidity==="Dry"){
+    main = "Low humidity / dry air";
+    plan = "Group plants, humidity tray, avoid hot draft; trim only dead tips.";
+  } else if(symptoms.includes("webbing")){
+    main = "Spider mites (suspect)";
+    plan = "Isolate, wipe leaves (soap + water), repeat every 3–4 days × 2–3; improve humidity & airflow.";
+  } else if(symptoms.includes("powdery")){
+    main = "Powdery mildew or mealybugs";
+    plan = "Wipe leaves; for mildew use mild fungicide; for mealybugs dab alcohol on clusters.";
+  } else if(symptoms.includes("chlorosis")){
+    main = "Iron deficiency / alkaline water";
+    plan = "Use balanced fertilizer w/ micros; consider filtered water; avoid overwatering.";
+  } else if(symptoms.includes("holes")){
+    main = "Chewing/pest damage";
+    plan = "Inspect undersides, sticky traps; remove affected leaves; consider neem/soap.";
+  }
+
+  if(selectedPlant==="calathea-lancifolia" && main==="General stress"){
+    main = "Dry air / irregular watering (Calathea common)";
+    plan = "Keep evenly moist, soft water, humidity tray; no direct sun.";
+  }
+  if(selectedPlant==="zamioculcas-zamiifolia" && main==="General stress"){
+    main = "Overwatering risk for ZZ";
+    plan = "Let soil dry deeply; bright-indirect; pot with drainage.";
+  }
+
+  const plantLabel = plantNames[selectedPlant] || "Unknown plant";
+  const diagHTML = `<p><b>Most likely:</b> ${main}</p><p><b>Next 72h:</b> ${plan}</p>`;
+  document.getElementById("diagnosis").innerHTML = diagHTML;
+
+  const symStr = symptoms.length ? symptoms.join(", ") : "none selected";
+  const prompt = `You are a houseplant diagnostician.\nPlant: ${plantLabel}.\nSymptoms: ${symStr}.\nConditions: light=${light}, watering=${watering}, humidity=${humidity}, repot_recently=${repot}.\nTask: 1) Top 3 likely causes. 2) One discriminating test for each. 3) A 72-hour plan (max 5 lines). 4) Safety notes for pets/kids.`;
+  document.getElementById("gptPrompt").value = prompt;
+}
+
+function copyPrompt(){
+  const ta = document.getElementById("gptPrompt");
+  ta.select(); ta.setSelectionRange(0, 99999);
+  document.execCommand("copy");
+  alert("Prompt copied. Paste into ChatGPT with the plant photo.");
+}
+
+function saveCase(){
+  const cases = JSON.parse(localStorage.getItem("plantCases") || "[]");
+  cases.push({
+    date: new Date().toLocaleString(),
+    plant: plantNames[selectedPlant] || "Unknown",
+    diag: document.getElementById("diagnosis").innerText
+  });
+  localStorage.setItem("plantCases", JSON.stringify(cases));
+  alert("Saved!");
+}
+
+function showHistory(){
+  document.getElementById("result").classList.remove("active");
+  document.getElementById("history").classList.add("active");
+  const cases = JSON.parse(localStorage.getItem("plantCases") || "[]");
+  const list = document.getElementById("historyList");
+  list.innerHTML = "";
+  cases.slice(-5).forEach(c=>{
+    const li = document.createElement("li");
+    li.textContent = `${c.date} — ${c.plant}: ${c.diag}`;
+    list.appendChild(li);
+  });
+}
+
+function restart(){
+  document.querySelectorAll("section").forEach(s=>s.classList.remove("active"));
+  document.getElementById("scan").classList.add("active");
+  document.getElementById("gptPrompt").value = "";
+  document.getElementById("diagnosis").innerHTML = "";
+  document.getElementById("preview").src = "";
+  document.querySelectorAll("#describe input[type=checkbox]").forEach(i=>i.checked=false);
+  photoData = ""; selectedPlant = "";
+}
+</script>
+</body>
+</html>
